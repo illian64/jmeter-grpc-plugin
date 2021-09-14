@@ -49,11 +49,18 @@ public class ProtocInvoker {
 
     private static Path convertPathToFullIfNonAbsolute(String pathStr) {
         Path path = Paths.get(pathStr);
-        if (path.isAbsolute()) {
-            return path;
-        } else {
-            return Paths.get(FileServer.getFileServer().getBaseDir(), pathStr);
+        if (!path.isAbsolute()) {
+            Path relativePath = Paths.get(FileServer.getFileServer().getBaseDir(), pathStr).normalize();
+            if (Files.exists(relativePath)) {
+                return relativePath;
+            } else if (Files.exists(relativePath)) {
+                return path;
+            } else {
+                throw new IllegalArgumentException("No one path not found! Source path string: " + pathStr + ", relative path: " + relativePath + ", absolute path: " + path);
+            }
         }
+
+        return path;
     }
 
     /**

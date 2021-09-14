@@ -9,8 +9,9 @@ import com.podoinikovi.jmeter.grpc.client.grpc.ChannelFactory;
 import com.podoinikovi.jmeter.grpc.client.grpc.DynamicGrpcClient;
 import com.podoinikovi.jmeter.grpc.client.io.MessageReader;
 import com.podoinikovi.jmeter.grpc.client.io.MessageWriter;
-import com.podoinikovi.jmeter.grpc.client.io.Output;
-import com.podoinikovi.jmeter.grpc.client.io.OutputImpl;
+import com.podoinikovi.jmeter.grpc.client.io.output.Output;
+import com.podoinikovi.jmeter.grpc.client.io.output.OutputFixedMessagesCountImpl;
+import com.podoinikovi.jmeter.grpc.client.io.output.OutputImpl;
 import com.podoinikovi.jmeter.grpc.client.protobuf.ProtoMethodName;
 import com.podoinikovi.jmeter.grpc.client.protobuf.ProtocInvoker;
 import com.podoinikovi.jmeter.grpc.client.protobuf.ServiceResolver;
@@ -19,7 +20,6 @@ import com.podoinikovi.jmeter.grpc.exception.GrpcPluginParseMessageException;
 import com.podoinikovi.jmeter.grpc.exception.GrpcPluginSystemException;
 import io.grpc.*;
 import io.grpc.stub.MetadataUtils;
-import io.grpc.stub.StreamObserver;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
@@ -29,10 +29,11 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class GrpcClient {
+    private static final Map<String, DescriptorProtos.FileDescriptorSet> serviceResolverCache = new ConcurrentHashMap<>();
+
     private final JsonFormat.TypeRegistry registry;
     private final ManagedChannel channel;
     private final ServiceResolver serviceResolver;
-    private static final Map<String, DescriptorProtos.FileDescriptorSet> serviceResolverCache = new ConcurrentHashMap<>();
 
     public GrpcClient(ConnectionParams connectionParams) {
         try {
@@ -41,13 +42,11 @@ public class GrpcClient {
             final DescriptorProtos.FileDescriptorSet fileDescriptorSet =
                     getServiceResolver(connectionParams.getProtoDiscoveryRoot(), connectionParams.getIncludePathsList());
 
-            serviceResolver = ServiceResolver.fromFileDescriptorSet(fileDescriptorSet);
+            this.serviceResolver = ServiceResolver.fromFileDescriptorSet(fileDescriptorSet);
 
-            registry = JsonFormat.TypeRegistry.newBuilder()
-                    .add(serviceResolver.listMessageTypes())
-                    .build();
-            channel = channelFactory.createChannel(connectionParams.getHostAndPort(), connectionParams.isUseTls(),
-                    connectionParams.isUseInsecureTls(), connectionParams.getMetadataMap());
+            this.registry = JsonFormat.TypeRegistry.newBuilder().add(serviceResolver.listMessageTypes()).build();
+            this.channel = channelFactory.createChannel(connectionParams.getHostAndPort(), connectionParams.isUseTls(),
+                    connectionParams.isUseInsecureTls());
         } catch (Exception e) {
             shutdownChannel();
             throw new GrpcPluginException(e);
@@ -62,18 +61,19 @@ public class GrpcClient {
         return channel.isTerminated();
     }
 
-    public Output call(String fullMethodName, String jsonData, Long deadlineMs) {
-        Output output = new OutputImpl();
+    public Output call(String fullMethodName, String jsonData, CallParams callParams) {
+        Output output = getOutput(callParams);
         try {
             ProtoMethodName grpcMethodName = ProtoMethodName.parseFullGrpcMethodName(fullMethodName);
             Descriptors.MethodDescriptor methodDescriptor = serviceResolver.resolveServiceMethod(grpcMethodName);
 
-            DynamicGrpcClient dynamicClient = DynamicGrpcClient.create(methodDescriptor, wrapChannelToMetadataInterceptor(output.getMetadataCapture()));
+            DynamicGrpcClient dynamicClient = DynamicGrpcClient.create(
+                    methodDescriptor, wrapChannelToMetadataInterceptor(output.getMetadataCapture(), callParams));
             ImmutableList<DynamicMessage> requestMessages = new MessageReader(methodDescriptor.getInputType(), registry, jsonData).read();
 
-            StreamObserver<DynamicMessage> streamObserver = MessageWriter.create(output, registry);
+            MessageWriter<DynamicMessage> streamObserver = MessageWriter.create(output, registry);
 
-            dynamicClient.call(requestMessages, streamObserver, callOptions(deadlineMs)).get();
+            dynamicClient.call(requestMessages, streamObserver, callParams).get();
 
             return output;
         } catch (GrpcPluginParseMessageException e) {
@@ -88,19 +88,20 @@ public class GrpcClient {
         }
     }
 
-    protected Channel wrapChannelToMetadataInterceptor(MetadataCapture metadataCapture) {
-        ClientInterceptor clientInterceptor = MetadataUtils.newCaptureMetadataInterceptor(
-                metadataCapture.getHeadersCapture(), metadataCapture.getTrailersCapture());
-
-        return ClientInterceptors.intercept(channel, clientInterceptor);
+    protected Output getOutput(CallParams callParams) {
+        if (callParams.getStreamMessageLimit() > 0) {
+            return new OutputFixedMessagesCountImpl(callParams.getStreamMessageLimit());
+        } else {
+            return new OutputImpl();
+        }
     }
 
-    private static CallOptions callOptions(long deadlineMs) {
-        CallOptions result = CallOptions.DEFAULT;
-        if (deadlineMs > 0) {
-            result = result.withDeadlineAfter(deadlineMs, TimeUnit.MILLISECONDS);
-        }
-        return result;
+    protected Channel wrapChannelToMetadataInterceptor(MetadataCapture metadataCapture, CallParams callParams) {
+        ClientInterceptor respHeadersInterceptor = MetadataUtils.newCaptureMetadataInterceptor(
+                metadataCapture.getHeadersCapture(), metadataCapture.getTrailersCapture());
+        ClientInterceptor reqHeadersInterceptor = MetadataUtils.newAttachHeadersInterceptor(callParams.getMetadataMap());
+
+        return ClientInterceptors.intercept(channel, respHeadersInterceptor, reqHeadersInterceptor);
     }
 
     public void shutdownChannel() {
@@ -110,6 +111,7 @@ public class GrpcClient {
                 channel.awaitTermination(5, TimeUnit.SECONDS);
             }
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new GrpcPluginException("Caught exception while shutting down channel", e);
         }
     }

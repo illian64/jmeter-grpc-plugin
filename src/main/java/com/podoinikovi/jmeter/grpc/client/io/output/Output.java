@@ -1,4 +1,4 @@
-package com.podoinikovi.jmeter.grpc.client.io;
+package com.podoinikovi.jmeter.grpc.client.io.output;
 
 import com.podoinikovi.jmeter.grpc.client.MetadataCapture;
 

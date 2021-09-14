@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicReference;
 @Getter
 @ToString
 public class MetadataCapture {
-    public static final String KEY_VALUE_DELIMITER = ": ";
+    public static final String KEY_VALUE_DELIMITER = "::";
     public static final String VALUES_DELIMITER = ", ";
     public static final String EMPTY_RESULT = "";
 

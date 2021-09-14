@@ -6,6 +6,8 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.protobuf.Descriptors.MethodDescriptor;
 import com.google.protobuf.DynamicMessage;
+import com.podoinikovi.jmeter.grpc.client.CallParams;
+import com.podoinikovi.jmeter.grpc.client.io.MessageWriter;
 import com.podoinikovi.jmeter.grpc.client.protobuf.DynamicMessageMarshaller;
 import io.grpc.CallOptions;
 import io.grpc.Channel;
@@ -40,54 +42,66 @@ public class DynamicGrpcClient {
      */
     public ListenableFuture<Void> call(
             ImmutableList<DynamicMessage> requests,
-            StreamObserver<DynamicMessage> responseObserver,
-            CallOptions callOptions) {
+            MessageWriter<DynamicMessage> responseObserver,
+            CallParams callParams) {
         Preconditions.checkArgument(!requests.isEmpty(), "Can't make call without any requests");
         MethodType methodType = getMethodType();
         long numRequests = requests.size();
         if (methodType == MethodType.UNARY) {
-            //logger.info("Making unary call");
+            logger.debug("Making unary call");
             Preconditions.checkArgument(numRequests == 1,
                     "Need exactly 1 request for unary call, but got: " + numRequests);
-            return callUnary(requests.get(0), responseObserver, callOptions);
+            return callUnary(requests.get(0), responseObserver, callParams);
         } else if (methodType == MethodType.SERVER_STREAMING) {
-            //logger.info("Making server streaming call");
+            logger.debug("Making server streaming call");
             Preconditions.checkArgument(numRequests == 1,
                     "Need exactly 1 request for server streaming call, but got: " + numRequests);
-            return callServerStreaming(requests.get(0), responseObserver, callOptions);
+            return callServerStreaming(requests.get(0), responseObserver, callParams);
         } else if (methodType == MethodType.CLIENT_STREAMING) {
-            //logger.info("Making client streaming call with " + requests.size() + " requests");
-            return callClientStreaming(requests, responseObserver, callOptions);
+            logger.debug("Making client streaming call with {} requests", + requests.size());
+            return callClientStreaming(requests, responseObserver, callParams);
         } else {
-            // Bidi streaming.
-            //logger.info("Making bidi streaming call with " + requests.size() + " requests");
-            return callBidiStreaming(requests, responseObserver, callOptions);
+            logger.debug("Making bidi streaming call with {} requests", requests.size());
+            return callBidiStreaming(requests, responseObserver, callParams);
         }
     }
 
     private ListenableFuture<Void> callBidiStreaming(
             ImmutableList<DynamicMessage> requests,
-            StreamObserver<DynamicMessage> responseObserver,
-            CallOptions callOptions) {
+            MessageWriter<DynamicMessage> responseObserver,
+            CallParams callParams) {
         DoneObserver<DynamicMessage> doneObserver = new DoneObserver<>();
         StreamObserver<DynamicMessage> requestObserver = ClientCalls.asyncBidiStreamingCall(
-                createCall(callOptions),
+                createCall(callParams.callOptions()),
                 CompositeStreamObserver.of(responseObserver, doneObserver));
         requests.forEach(requestObserver::onNext);
-        //MessageWriter m = null;
-        //m.getOutput().messagesCount()
-        //if (output.messCount = 10)
-        requestObserver.onCompleted();
+        if (callParams.getStreamStopAfterMessages() > 0) {
+            if (responseObserver.getOutput().messagesCount() >= callParams.getStreamStopAfterMessages()) {
+                requestObserver.onCompleted();
+            }
+        } else if (callParams.getStreamStopAfterTime() > 0) {
+            try {
+                Thread.sleep(callParams.getStreamStopAfterTime());
+            } catch (InterruptedException e) {
+                logger.error("Error waiting for stream completed, waiting time: {}", callParams.getStreamStopAfterTime());
+                Thread.currentThread().interrupt();
+            } finally {
+                requestObserver.onCompleted();
+            }
+        } else {
+            requestObserver.onCompleted();
+        }
+
         return doneObserver.getCompletionFuture();
     }
 
     private ListenableFuture<Void> callClientStreaming(
             ImmutableList<DynamicMessage> requests,
             StreamObserver<DynamicMessage> responseObserver,
-            CallOptions callOptions) {
+            CallParams callParams) {
         DoneObserver<DynamicMessage> doneObserver = new DoneObserver<>();
         StreamObserver<DynamicMessage> requestObserver = ClientCalls.asyncClientStreamingCall(
-                createCall(callOptions),
+                createCall(callParams.callOptions()),
                 CompositeStreamObserver.of(responseObserver, doneObserver));
         requests.forEach(requestObserver::onNext);
         requestObserver.onCompleted();
@@ -97,10 +111,10 @@ public class DynamicGrpcClient {
     private ListenableFuture<Void> callServerStreaming(
             DynamicMessage request,
             StreamObserver<DynamicMessage> responseObserver,
-            CallOptions callOptions) {
+            CallParams callParams) {
         DoneObserver<DynamicMessage> doneObserver = new DoneObserver<>();
         ClientCalls.asyncServerStreamingCall(
-                createCall(callOptions),
+                createCall(callParams.callOptions()),
                 request,
                 CompositeStreamObserver.of(responseObserver, doneObserver));
         return doneObserver.getCompletionFuture();
@@ -109,10 +123,10 @@ public class DynamicGrpcClient {
     private ListenableFuture<Void> callUnary(
             DynamicMessage request,
             StreamObserver<DynamicMessage> responseObserver,
-            CallOptions callOptions) {
+            CallParams callParams) {
         DoneObserver<DynamicMessage> doneObserver = new DoneObserver<>();
         ClientCalls.asyncUnaryCall(
-                createCall(callOptions),
+                createCall(callParams.callOptions()),
                 request,
                 CompositeStreamObserver.of(responseObserver, doneObserver));
         return doneObserver.getCompletionFuture();

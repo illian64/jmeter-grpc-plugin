@@ -1,8 +1,9 @@
 package com.podoinikovi.jmeter.grpc;
 
+import com.podoinikovi.jmeter.grpc.client.CallParams;
 import com.podoinikovi.jmeter.grpc.client.ConnectionParams;
 import com.podoinikovi.jmeter.grpc.client.GrpcClient;
-import com.podoinikovi.jmeter.grpc.client.io.Output;
+import com.podoinikovi.jmeter.grpc.client.io.output.Output;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Instant;
@@ -10,13 +11,15 @@ import java.time.Instant;
 @Slf4j
 public class Main {
     public static void main(String[] args) {
-        String metadata = "key1:" + Instant.now().toString();
-        ConnectionParams params = new ConnectionParams("localhost:8080",
-                "D:\\Prog\\YandexDisk\\Java\\spring-cloud\\spring-cloud-sleuth\\proto",
-                "", false, true, metadata);
-        GrpcClient grpcClient = new GrpcClient(params);
+        String metadata = "key1::" + Instant.now().toString();
+        ConnectionParams connectionParams = new ConnectionParams("localhost:8080",
+//                "D:\\Prog\\YandexDisk\\Java\\spring-cloud\\spring-cloud-sleuth\\proto",
+                "/opt/var/1.proto",
+                "", false, true);
+        CallParams callParams = CallParams.unary(metadata, 10000L);
+        GrpcClient grpcClient = new GrpcClient(connectionParams);
         //Output call = grpcClient.call("my.test.HelloService/helloServerStream", "{\"requestId\": \"1\"}", 100_000L);
-        Output call = grpcClient.call("my.test.HelloService/helloClientStream", "{\"requestId\": \"1\"}\n\n{\"requestId\": \"2\"}\n\n{\"requestId\": \"3\"}", 100_000L);
+        Output call = grpcClient.call("my.test.HelloService/helloClientStream", "{\"requestId\": \"1\"}\n\n{\"requestId\": \"2\"}\n\n{\"requestId\": \"3\"}", callParams);
 
         //Output call = grpcClient.call("my.test.HelloService/helloServerStream", "{\"requestId\": \"1\"}\n\n{\"requestId\": \"2\"}\n\n{\"requestId\": \"3\"}", 100_000L);
 

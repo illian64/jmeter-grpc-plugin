@@ -1,9 +1,10 @@
 package com.podoinikovi.jmeter.grpc;
 
+import com.podoinikovi.jmeter.grpc.client.CallParams;
 import com.podoinikovi.jmeter.grpc.client.ConnectionParams;
 import com.podoinikovi.jmeter.grpc.client.GrpcClient;
 import com.podoinikovi.jmeter.grpc.client.MetadataCapture;
-import com.podoinikovi.jmeter.grpc.client.io.Output;
+import com.podoinikovi.jmeter.grpc.client.io.output.Output;
 import com.podoinikovi.jmeter.grpc.exception.GrpcPluginSystemException;
 import io.grpc.StatusRuntimeException;
 import lombok.extern.slf4j.Slf4j;
@@ -28,13 +29,18 @@ public class GrpcPluginSampler extends AbstractSampler implements ThreadListener
     public static final String DEADLINE = PREFIX + "deadline";
     public static final String TLS = PREFIX + "tls";
     public static final String TLS_DISABLE_VERIFICATION = PREFIX + "tlsDisableVerification";
+    public static final String STREAM_STOP_AFTER_MESSAGES = PREFIX + "streamStopAfterMessages";
+    public static final String STREAM_STOP_AFTER_TIME = PREFIX + "streamStopAfterTime";
+    public static final String STREAM_MESSAGE_LIMIT = PREFIX + "streamMessageLimit";
 
     private transient GrpcClient grpcClient = null;
     private transient ConnectionParams connectionParams = null;
+    private transient CallParams callParams = null;
 
     private void initGrpcClient() {
         if (grpcClient == null) {
-            connectionParams = new ConnectionParams(getHostPort(), getProtoFolder(), getLibFolder(), isTls(), isTlsDisableVerification(), getMetadata());
+            connectionParams = new ConnectionParams(getHostPort(), getProtoFolder(), getLibFolder(), isTls(), isTlsDisableVerification());
+            callParams = new CallParams(getMetadata(), getDeadline(), getStreamStopAfterMessages(), getStreamStopAfterTime(), getStreamMessageLimit());
             grpcClient = new GrpcClient(connectionParams);
         }
     }
@@ -46,9 +52,9 @@ public class GrpcPluginSampler extends AbstractSampler implements ThreadListener
             initGrpcClient();
             sampleResult.setSampleLabel(getName());
             sampleResult.setSamplerData(getRequestJson());
-            sampleResult.setRequestHeaders(connectionParams.metadataString());
+            sampleResult.setRequestHeaders(callParams.getMetadataStr());
             sampleResult.sampleStart();
-            Output output = grpcClient.call(getFullMethod(), getRequestJson(), parsingDeadlineTime(getDeadline()));
+            Output output = grpcClient.call(getFullMethod(), getRequestJson(), callParams);
             sampleResult.sampleEnd();
             sampleResult.setSuccessful(true);
             sampleResult.setResponseData(output.getGrpcMessageString(), StandardCharsets.UTF_8.name());
@@ -81,6 +87,9 @@ public class GrpcPluginSampler extends AbstractSampler implements ThreadListener
     }
 
     private void errorResult(SampleResult sampleResult, Exception e) {
+        if (!sampleResult.isStampedAtStart()) { //if sample fail before start, for example in initClient
+            sampleResult.sampleStart();
+        }
         sampleResult.sampleEnd();
         sampleResult.setSuccessful(false);
         sampleResult.setResponseData("Exception: " + e.getCause().getMessage(), "UTF-8");
@@ -137,8 +146,8 @@ public class GrpcPluginSampler extends AbstractSampler implements ThreadListener
         setProperty(REQUEST_JSON, requestJson);
     }
 
-    public String getDeadline() {
-        return getPropertyAsString(DEADLINE);
+    public Long getDeadline() {
+        return getPropertyAsLong(DEADLINE);
     }
 
     public void setDeadline(String deadline) {
@@ -181,11 +190,27 @@ public class GrpcPluginSampler extends AbstractSampler implements ThreadListener
         return getHost() + ":" + getPort();
     }
 
-    private Long parsingDeadlineTime(String deadlineMs) {
-        try {
-            return Long.parseLong(deadlineMs);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Caught exception while parsing deadline to long", e);
-        }
+    public Integer getStreamStopAfterMessages() {
+        return getPropertyAsInt(STREAM_STOP_AFTER_MESSAGES, CallParams.DEFAULT_VALUE);
+    }
+
+    public void setStreamStopAfterMessages(String streamStopAfterMessages) {
+        setProperty(STREAM_STOP_AFTER_MESSAGES, streamStopAfterMessages);
+    }
+
+    public Integer getStreamStopAfterTime() {
+        return getPropertyAsInt(STREAM_STOP_AFTER_TIME, CallParams.DEFAULT_VALUE);
+    }
+
+    public void setStreamStopAfterTime(String streamStopAfterTime) {
+        setProperty(STREAM_STOP_AFTER_TIME, streamStopAfterTime);
+    }
+
+    public Integer getStreamMessageLimit() {
+        return getPropertyAsInt(STREAM_MESSAGE_LIMIT, CallParams.DEFAULT_VALUE);
+    }
+
+    public void setStreamMessageLimit(String streamMessageLimit) {
+        setProperty(STREAM_MESSAGE_LIMIT, streamMessageLimit);
     }
 }

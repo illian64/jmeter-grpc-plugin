@@ -22,18 +22,16 @@ import java.util.List;
 @Slf4j
 public class GrpcPluginSamplerGui extends AbstractSamplerGui {
     private JTextField protoFolderField;
-    private JButton protoBrowseButton;
-
     private JTextField libFolderField;
-    private JButton libBrowseButton;
-
     private JComboBox<String> fullMethodField;
-    private JButton fullMethodButton;
 
     private JLabeledTextField metadataField;
     private JLabeledTextField hostField;
     private JLabeledTextField portField;
     private JLabeledTextField deadlineField;
+    private JLabeledTextField streamStopAfterMessages;
+    private JLabeledTextField streamStopAfterTime;
+    private JLabeledTextField streamMessageLimit;
 
     private JCheckBox isTLSCheckBox;
     private JCheckBox isTLSDisableVerificationCheckBox;
@@ -67,26 +65,32 @@ public class GrpcPluginSamplerGui extends AbstractSamplerGui {
     @Override
     public void modifyTestElement(TestElement element) {
         configureTestElement(element);
-        if (!(element instanceof GrpcPluginSampler))
+        if (!(element instanceof GrpcPluginSampler)) {
             return;
+        }
         GrpcPluginSampler sampler = (GrpcPluginSampler) element;
-        sampler.setProtoFolder(this.protoFolderField.getText());
-        sampler.setLibFolder(this.libFolderField.getText());
-        sampler.setMetadata(this.metadataField.getText());
-        sampler.setHost(this.hostField.getText());
-        sampler.setPort(this.portField.getText());
-        sampler.setFullMethod(this.fullMethodField.getSelectedItem() != null ? this.fullMethodField.getSelectedItem().toString() : "");
-        sampler.setDeadline(this.deadlineField.getText());
-        sampler.setTls(this.isTLSCheckBox.isSelected());
-        sampler.setTlsDisableVerification(this.isTLSDisableVerificationCheckBox.isSelected());
-        sampler.setRequestJson(this.requestJsonArea.getText());
+        sampler.setProtoFolder(protoFolderField.getText());
+        sampler.setLibFolder(libFolderField.getText());
+        sampler.setMetadata(metadataField.getText());
+        sampler.setHost(hostField.getText());
+        sampler.setPort(portField.getText());
+        sampler.setFullMethod(fullMethodField.getSelectedItem() != null ? fullMethodField.getSelectedItem().toString() : "");
+        sampler.setDeadline(deadlineField.getText());
+        sampler.setTls(isTLSCheckBox.isSelected());
+        sampler.setTlsDisableVerification(isTLSDisableVerificationCheckBox.isSelected());
+        sampler.setRequestJson(requestJsonArea.getText());
+        sampler.setStreamStopAfterMessages(streamStopAfterMessages.getText());
+        sampler.setStreamStopAfterTime(streamStopAfterTime.getText());
+        sampler.setStreamMessageLimit(streamMessageLimit.getText());
     }
 
     @Override
     public void configure(TestElement element) {
         super.configure(element);
-        if (!(element instanceof GrpcPluginSampler))
+        if (!(element instanceof GrpcPluginSampler)) {
             return;
+        }
+
         GrpcPluginSampler sampler = (GrpcPluginSampler) element;
         protoFolderField.setText(sampler.getProtoFolder());
         libFolderField.setText(sampler.getLibFolder());
@@ -94,10 +98,13 @@ public class GrpcPluginSamplerGui extends AbstractSamplerGui {
         hostField.setText(sampler.getHost());
         portField.setText(sampler.getPort());
         fullMethodField.setSelectedItem(sampler.getFullMethod());
-        deadlineField.setText(sampler.getDeadline());
+        deadlineField.setText(sampler.getDeadline().toString());
         isTLSCheckBox.setSelected(sampler.isTls());
         isTLSDisableVerificationCheckBox.setSelected(sampler.isTlsDisableVerification());
         requestJsonArea.setText(sampler.getRequestJson());
+        streamStopAfterMessages.setText(sampler.getStreamStopAfterMessages().toString());
+        streamStopAfterTime.setText(sampler.getStreamStopAfterTime().toString());
+        streamMessageLimit.setText(sampler.getStreamMessageLimit().toString());
     }
 
     @Override
@@ -117,6 +124,9 @@ public class GrpcPluginSamplerGui extends AbstractSamplerGui {
         isTLSCheckBox.setSelected(false);
         isTLSDisableVerificationCheckBox.setSelected(false);
         requestJsonArea.setText("");
+        streamStopAfterMessages.setText("0");
+        streamStopAfterTime.setText("0");
+        streamMessageLimit.setText("0");
     }
 
     private void initGui() {
@@ -134,6 +144,7 @@ public class GrpcPluginSamplerGui extends AbstractSamplerGui {
         mainPanel.add(getWebServerPanel());
         mainPanel.add(getGRPCRequestPanel());
         mainPanel.add(getOptionConfigPanel());
+        mainPanel.add(getStreamConfigPanel());
         mainPanel.add(getRequestJSONPanel());
         add(mainPanel, BorderLayout.CENTER);
     }
@@ -164,17 +175,36 @@ public class GrpcPluginSamplerGui extends AbstractSamplerGui {
     }
 
     private JPanel getOptionConfigPanel() {
-        metadataField = new JLabeledTextField("Metadata:\n(k1:v1,k2:v2)", 32);
+        metadataField = new JLabeledTextField("Metadata:\n(k1::v1,k2::v2)", 32);
         deadlineField = new JLabeledTextField("Deadline:", 7);
 
-        JPanel webServerPanel = new HorizontalPanel();
-        webServerPanel.setBorder(BorderFactory.createCompoundBorder(
+        JPanel optionalConfigPanel = new HorizontalPanel();
+        optionalConfigPanel.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createEmptyBorder(9, 0, 0, 0),
                 BorderFactory.createTitledBorder("Optional Configuration")
         ));
-        webServerPanel.add(metadataField);
-        webServerPanel.add(deadlineField);
-        return webServerPanel;
+        optionalConfigPanel.add(metadataField);
+        optionalConfigPanel.add(deadlineField);
+
+        return optionalConfigPanel;
+    }
+
+    private JPanel getStreamConfigPanel() {
+        streamStopAfterMessages = new JLabeledTextField("Stop stream after receive messages:", 32);
+        streamStopAfterTime = new JLabeledTextField("Stop stream after time period (ms):", 32);
+        streamMessageLimit = new JLabeledTextField("Save messages limit:", 32);
+
+
+        JPanel streamConfigPanel = new HorizontalPanel();
+        streamConfigPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createEmptyBorder(9, 0, 0, 0),
+                BorderFactory.createTitledBorder("Stream Configuration")
+        ));
+        streamConfigPanel.add(streamStopAfterMessages);
+        streamConfigPanel.add(streamStopAfterTime);
+        streamConfigPanel.add(streamMessageLimit);
+
+        return streamConfigPanel;
     }
 
     private JPanel getGRPCRequestPanel() {
@@ -190,7 +220,7 @@ public class GrpcPluginSamplerGui extends AbstractSamplerGui {
 
         // Proto folder
         int row = 0;
-        protoBrowseButton = new JButton("Browse...");
+        JButton protoBrowseButton = new JButton("Browse...");
         protoFolderField = new JTextField(20);
 
         addToPanel(requestPanel, labelConstraints, 0, row,
@@ -208,8 +238,10 @@ public class GrpcPluginSamplerGui extends AbstractSamplerGui {
         // Lib folder
         addToPanel(requestPanel, labelConstraints, 0, row,
                 new JLabel("Library Directory (Optional): ", SwingConstants.RIGHT));
-        addToPanel(requestPanel, editConstraints, 1, row, libFolderField = new JTextField(20));
-        addToPanel(requestPanel, labelConstraints, 2, row, libBrowseButton = new JButton("Browse..."));
+        libFolderField = new JTextField(20);
+        JButton libBrowseButton = new JButton("Browse...");
+        addToPanel(requestPanel, editConstraints, 1, row, libFolderField);
+        addToPanel(requestPanel, labelConstraints, 2, row, libBrowseButton);
         row++;
         GuiBuilderHelper.strechItemToComponent(libFolderField, libBrowseButton);
 
@@ -224,7 +256,7 @@ public class GrpcPluginSamplerGui extends AbstractSamplerGui {
         addToPanel(requestPanel, editConstraints, 1, row, fullMethodField);
         fullMethodField.setEditable(true);
 
-        fullMethodButton = new JButton("Listing...");
+        JButton fullMethodButton = new JButton("Listing...");
         addToPanel(requestPanel, labelConstraints, 2, row, fullMethodButton);
 
         fullMethodButton.addActionListener(e -> getMethods(fullMethodField));
