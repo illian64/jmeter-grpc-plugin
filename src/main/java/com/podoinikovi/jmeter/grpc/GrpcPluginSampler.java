@@ -49,9 +49,9 @@ public class GrpcPluginSampler extends AbstractSampler implements ThreadListener
     public SampleResult sample(Entry ignored) {
         SampleResult sampleResult = new SampleResult();
         try {
-            initGrpcClient();
             sampleResult.setSampleLabel(getName());
             sampleResult.setSamplerData(getRequestJson());
+            initGrpcClient();
             sampleResult.setRequestHeaders(callParams.getMetadataStr());
             sampleResult.sampleStart();
             Output output = grpcClient.call(getFullMethod(), getRequestJson(), callParams);
@@ -87,14 +87,18 @@ public class GrpcPluginSampler extends AbstractSampler implements ThreadListener
     }
 
     private void errorResult(SampleResult sampleResult, Exception e) {
-        if (!sampleResult.isStampedAtStart()) { //if sample fail before start, for example in initClient
+        if (sampleResult.getStartTime() == 0) { //if sample fail before start, for example in initClient
             sampleResult.sampleStart();
         }
         sampleResult.sampleEnd();
         sampleResult.setSuccessful(false);
-        sampleResult.setResponseData("Exception: " + e.getCause().getMessage(), "UTF-8");
-        sampleResult.setResponseMessage("Exception: " + e.getCause().getMessage());
         sampleResult.setDataType(SampleResult.TEXT);
+
+        String message = e.getMessage() != null ? e.getMessage() : "";
+        String cause = e.getCause() != null && e.getCause().getMessage() != null ? e.getCause().getMessage() : "";
+        String messageWithCause = !message.equals(cause) ? message + ", " + cause : message;
+        sampleResult.setResponseData("Exception: " + messageWithCause, "UTF-8");
+        sampleResult.setResponseMessage("Exception: " + messageWithCause);
 
         if (e instanceof GrpcPluginSystemException && e.getCause() instanceof StatusRuntimeException) {
             StatusRuntimeException statusRuntimeException = (StatusRuntimeException) e.getCause();
@@ -102,7 +106,7 @@ public class GrpcPluginSampler extends AbstractSampler implements ThreadListener
             sampleResult.setResponseCode(statusRuntimeException.getStatus().getCode().value() + ", "
                     + statusRuntimeException.getStatus().getCode().toString());
         } else {
-            sampleResult.setResponseCode("500");
+            sampleResult.setResponseCode("2, UNKNOWN ERROR"); //GRPC UNKNOWN ERROR CODE
         }
     }
 
